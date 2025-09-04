@@ -5,9 +5,27 @@ from pathlib import Path
 from typing import Literal, Optional
 
 import pandas as pd
-from duka.app.app import run as duka_run
-
 from .config import VALID_GRANULARITY, resolve_symbol
+
+
+def _duka_download(args_list: list[str]) -> None:
+    """
+    Wrapper para invocar duka:
+    - Intenta API interna (duka.app.app.run) si está disponible
+    - Si no, cae al CLI con: python -m duka download ...
+    """
+    try:  # pragma: no cover
+        from duka.app.app import run as duka_run  # type: ignore
+        duka_run(args_list)
+        return
+    except Exception:
+        pass
+
+    import subprocess
+    import sys
+
+    cmd = [sys.executable, "-m", "duka", "download"] + args_list
+    subprocess.run(cmd, check=True)
 
 
 def _normalize_tick_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -58,38 +76,7 @@ def download(
     aggregate_to: Optional[str] = None,
     tz: str = "UTC",
 ) -> str:
-    """Download data from Dukascopy and store as Parquet.
-
-    Parameters
-    ----------
-    symbol: str
-        Trading pair symbol, e.g. ``"EURUSD"``.
-    start, end: str
-        Date range in ``YYYY-MM-DD``.
-    granularity: Literal["tick", "m1"]
-        Data granularity to download.
-    out_dir: str
-        Directory to store intermediate CSV files.
-    out_parquet: Optional[str]
-        Path to the output Parquet file. If ``None`` a default path is used.
-    aggregate_to: Optional[str]
-        Resample frequency when downloading ticks.
-    tz: str
-        Target timezone for timestamps.
-
-    Returns
-    -------
-    str
-        Path to the saved Parquet file.
-
-    Raises
-    ------
-    ValueError
-        If invalid parameters are provided or required columns are missing.
-    FileNotFoundError
-        If the download produced no CSV files.
-    """
-
+    """Download data from Dukascopy and store as Parquet."""
     granularity = granularity.lower()
     if granularity not in VALID_GRANULARITY:
         raise ValueError(f"Invalid granularity: {granularity}")
@@ -99,20 +86,15 @@ def download(
     download_dir = Path(out_dir) / resolved_symbol / granularity
     download_dir.mkdir(parents=True, exist_ok=True)
 
+    # Flags cortas compatibles con duka 0.2.0
     args = [
-        "--symbol",
-        resolved_symbol,
-        "--from",
-        start,
-        "--to",
-        end,
-        "--granularity",
-        granularity,
-        "--download-dir",
-        str(download_dir),
+        "-s", resolved_symbol,
+        "-f", start,
+        "-t", end,
+        "-g", granularity,
+        "-d", str(download_dir),
     ]
-
-    duka_run(args)
+    _duka_download(args)
 
     csv_files = list(download_dir.rglob("*.csv"))
     if not csv_files:
