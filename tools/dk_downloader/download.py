@@ -10,7 +10,11 @@ from .config import VALID_GRANULARITY, resolve_symbol
 
 
 def _duka_download(args_list: list[str]) -> None:
-    """Wrapper to invoke duka via API or CLI."""
+    """Invoke ``duka`` via internal API or CLI.
+
+    Tries ``duka.app.app.run`` first and falls back to
+    ``python -m duka download`` if the API is unavailable.
+    """
     try:  # pragma: no cover
         from duka.app.app import run as duka_run  # type: ignore
         duka_run(args_list)
@@ -18,15 +22,10 @@ def _duka_download(args_list: list[str]) -> None:
     except Exception:
         pass
 
-    import shutil
     import subprocess
     import sys
 
-    if shutil.which("duka"):
-        cmd = ["duka", "download"] + args_list
-    else:
-        cmd = [sys.executable, "-m", "duka.cli", "download"] + args_list
-
+    cmd = [sys.executable, "-m", "duka", "download"] + args_list
     subprocess.run(cmd, check=True)
 
 def _normalize_tick_df(df: pd.DataFrame) -> pd.DataFrame:
