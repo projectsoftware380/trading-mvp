@@ -16,5 +16,5 @@ pydantic>=2.6
 fastapi>=0.110
 uvicorn[standard]>=0.27
 pyyaml>=6.0
-duka>=0.3.3
+duka==0.2.0
 pyarrow==12.0.1
