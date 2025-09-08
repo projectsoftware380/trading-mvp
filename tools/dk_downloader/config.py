@@ -6,15 +6,15 @@ from typing import Dict
 # Mapping of supported FX symbols. Keys are canonical uppercase codes used in
 # the downloader; values are the codes expected by the Dukascopy API.
 SYMBOLS: Dict[str, str] = {
-    "EURUSD": "EURUSD",
-    "GBPUSD": "GBPUSD",
-    "USDJPY": "USDJPY",
-    "USDCHF": "USDCHF",
-    "USDCAD": "USDCAD",
-    "AUDUSD": "AUDUSD",
-    "NZDUSD": "NZDUSD",
-    "EURGBP": "EURGBP",
-    "EURJPY": "EURJPY",
+    "EURUSD": "eurusd",
+    "GBPUSD": "gbpusd",
+    "USDJPY": "usdjpy",
+    "USDCHF": "usdchf",
+    "USDCAD": "usdcad",
+    "AUDUSD": "aususd",
+    "NZDUSD": "nzdusd",
+    "EURGBP": "eurgbp",
+    "EURJPY": "eurjpy",
 }
 
 VALID_GRANULARITY = {"tick", "m1"}
