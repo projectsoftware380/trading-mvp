@@ -1,29 +1,26 @@
-import numpy as np
 import pandas as pd
 
-def atr_wilder(df: pd.DataFrame, period: int = 14) -> pd.Series:
-    high, low, close = df['high'].to_numpy(), df['low'].to_numpy(), df['close'].to_numpy()
-    prev_close = np.r_[np.nan, close[:-1]]
-    tr = np.maximum(high - low, np.maximum(np.abs(high - prev_close), np.abs(low - prev_close)))
-    return pd.Series(tr, index=df.index).ewm(alpha=1/period, adjust=False).mean()
+def add_atr(df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
+    """
+    Calculates and adds the Average True Range (ATR) to the DataFrame.
 
-def rsi(df: pd.DataFrame, period: int = 14) -> pd.Series:
-    delta = df['close'].diff()
-    gain = (delta.clip(lower=0)).ewm(alpha=1/period, adjust=False).mean()
-    loss = (-delta.clip(upper=0)).ewm(alpha=1/period, adjust=False).mean()
-    rs = gain / (loss + 1e-12)
-    return 100 - (100 / (1 + rs))
+    Args:
+        df: DataFrame with 'high', 'low', 'close' columns.
+        period: The period for the ATR calculation.
 
-def sma(s: pd.Series, n: int) -> pd.Series:
-    return s.rolling(n, min_periods=n).mean()
+    Returns:
+        DataFrame with 'atr' column added.
+    """
+    if not all(col in df.columns for col in ['high', 'low', 'close']):
+        raise ValueError("DataFrame must contain 'high', 'low', and 'close' columns.")
 
-def bbands(df: pd.DataFrame, period: int = 20, stds: float = 2.0):
-    mid = sma(df['close'], period)
-    std = df['close'].rolling(period, min_periods=period).std()
-    upper = mid + stds * std
-    lower = mid - stds * std
-    return upper, mid, lower
+    high_low = df['high'] - df['low']
+    high_prev_close = (df['high'] - df['close'].shift(1)).abs()
+    low_prev_close = (df['low'] - df['close'].shift(1)).abs()
 
-def volume_relative(df: pd.DataFrame, period: int = 20) -> pd.Series:
-    ma = sma(df['volume'], period)
-    return df['volume'] / (ma + 1e-12)
+    tr = pd.concat([high_low, high_prev_close, low_prev_close], axis=1).max(axis=1)
+    
+    # Calculate ATR using an exponential moving average
+    df['atr'] = tr.ewm(alpha=1/period, adjust=False).mean()
+    
+    return df

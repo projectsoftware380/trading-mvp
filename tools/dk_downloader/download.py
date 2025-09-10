@@ -1,112 +1,14 @@
 # tools/dk_downloader/download.py
-"""Utilities to download and process Dukascopy data (duka 0.2.0 compatible)."""
+"""Utilities to download and process Dukascopy data using dukascopy-node."""
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 from typing import Literal, Optional
 
 import pandas as pd
 
 from .config import VALID_GRANULARITY, resolve_symbol
-
-
-def _duka_download(args_list: list[str]) -> None:
-    """
-    Invoca Dukascopy downloader (duka) de forma robusta:
-
-    1) Intenta usar la API interna si está disponible:
-       from duka.app.app import run as duka_run
-       duka_run(args_list)
-
-    2) Si falla, usa el ejecutable del entorno virtual:
-       - Windows:  <venv>\\Scripts\\duka.exe
-       - Linux/Mac: <venv>/bin/duka
-       Probando con y sin subcomando 'download' (algunas variantes lo requieren).
-    """
-    # 1) API interna (si existe en la versión instalada)
-    try:  # pragma: no cover
-        from duka.app.app import run as duka_run  # type: ignore
-        duka_run(args_list)
-        return
-    except Exception:
-        # Seguimos con el fallback al ejecutable
-        pass
-
-    # 2) Ejecutable
-    import os
-    import sys
-    import subprocess
-    from shutil import which
-
-    scripts_dir = Path(sys.executable).parent
-    duka_bin = scripts_dir / ("duka.exe" if os.name == "nt" else "duka")
-
-    candidates: list[list[str]] = []
-    if duka_bin.exists():
-        candidates.append([str(duka_bin), "download"] + args_list)
-        candidates.append([str(duka_bin)] + args_list)
-    else:
-        found = which("duka")
-        if found:
-            candidates.append([found, "download"] + args_list)
-            candidates.append([found] + args_list)
-
-    if not candidates:
-        raise RuntimeError(
-            "No se encontró el ejecutable 'duka'. "
-            "Verifica que duka==0.2.0 esté instalado en este entorno."
-        )
-
-    last_err: Exception | None = None
-    for cmd in candidates:
-        try:
-            subprocess.run(cmd, check=True)
-            return
-        except subprocess.CalledProcessError as e:
-            last_err = e
-            # probar siguiente variante
-            continue
-
-    raise RuntimeError(f"Fallo al ejecutar duka. Intentos: {candidates}\n{last_err}")
-
-
-def _normalize_tick_df(df: pd.DataFrame) -> pd.DataFrame:
-    """Normalize columns for tick data."""
-    rename_map = {"timestamp": "time"}
-    df = df.rename(columns=rename_map)
-    if "time" not in df.columns:
-        raise ValueError("Tick data missing 'time' column")
-    df["time"] = pd.to_datetime(df["time"], utc=True)
-    return df
-
-
-def _normalize_m1_df(df: pd.DataFrame) -> pd.DataFrame:
-    """Normalize columns for m1 data."""
-    if "time" not in df.columns:
-        raise ValueError("m1 data missing 'time' column")
-    df["time"] = pd.to_datetime(df["time"], utc=True)
-    expected = {"open", "high", "low", "close", "volume"}
-    missing = expected.difference(df.columns)
-    if missing:
-        raise ValueError(f"m1 data missing columns: {missing}")
-    return df
-
-
-def _aggregate_ticks(df: pd.DataFrame, freq: str) -> pd.DataFrame:
-    """Aggregate tick data to OHLCV."""
-    price_col = "bid" if "bid" in df.columns else df.columns[1]
-    df = df.set_index("time")
-    ohlc = df[price_col].resample(freq).ohlc()
-    if {"bid_volume", "ask_volume"}.issubset(df.columns):
-        volume = (
-            df["bid_volume"].resample(freq).sum()
-            + df["ask_volume"].resample(freq).sum()
-        )
-    else:
-        # si no hay volúmenes en ticks, deja 0
-        volume = pd.Series(0, index=ohlc.index)
-    result = ohlc.assign(volume=volume).reset_index()
-    return result
 
 
 def download(
@@ -120,7 +22,7 @@ def download(
     tz: str = "UTC",
 ) -> str:
     """
-    Download data from Dukascopy (via duka) and store as Parquet.
+    Download data from Dukascopy (via dukascopy-node) and store as Parquet.
 
     Parameters
     ----------
@@ -147,40 +49,59 @@ def download(
     if granularity not in VALID_GRANULARITY:
         raise ValueError(f"Invalid granularity: {granularity}")
 
-    resolved_symbol = resolve_symbol(symbol)
+    resolved_symbol = resolve_symbol(symbol).lower()
 
-    download_dir = Path(out_dir) / resolved_symbol / granularity
-    download_dir.mkdir(parents=True, exist_ok=True)
+    # Correct timeframe argument for dukascopy-node
+    timeframe = "m1" if granularity == "m1" else "tick"
 
-    # Flags cortas compatibles con duka 0.2.0
-    args = [
-        "-s", resolved_symbol,
-        "-f", start,
-        "-t", end,
-        "-g", granularity,
-        "-d", str(download_dir),
+    command = [
+        "npx",
+        "dukascopy-node",
+        "-i",
+        resolved_symbol,
+        "-from",
+        start,
+        "-to",
+        end,
+        "-t",
+        timeframe,
+        "-f",
+        "csv",
+        "-v",
     ]
-    _duka_download(args)
 
-    # Consolidación de CSVs a DataFrame
+    # Run the command from the correct directory
+    try:
+        subprocess.run(command, check=True, cwd="tools/dk_downloader", shell=True)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Error downloading data with dukascopy-node: {e.stderr}") from e
+
+    # Find the downloaded file
+    # The file is downloaded to tools/dk_downloader/download
+    download_dir = Path("tools/dk_downloader/download")
     csv_files = list(download_dir.rglob("*.csv"))
     if not csv_files:
-        raise FileNotFoundError("No CSV files downloaded")
+        raise FileNotFoundError("No CSV files downloaded by dukascopy-node.")
 
-    dfs = [pd.read_csv(f) for f in csv_files]
-    df = pd.concat(dfs, ignore_index=True)
+    # Find the most recent csv file
+    latest_file = max(csv_files, key=lambda p: p.stat().st_mtime)
 
-    # Normalización según tipo
-    if granularity == "tick":
-        df = _normalize_tick_df(df)
-        if aggregate_to:
-            df = _aggregate_ticks(df, aggregate_to)
-            expected_cols = {"time", "open", "high", "low", "close", "volume"}
-            missing = expected_cols.difference(df.columns)
-            if missing:
-                raise ValueError(f"Aggregated data missing columns: {missing}")
-    else:
-        df = _normalize_m1_df(df)
+    try:
+        df = pd.read_csv(latest_file)
+    except FileNotFoundError as e:
+        raise RuntimeError(f"Downloaded CSV file not found: {latest_file}") from e
+    except pd.errors.EmptyDataError as e:
+        raise RuntimeError(f"Downloaded CSV file is empty: {latest_file}") from e
+
+    # Normalize columns dynamically
+    df = df.rename(columns={"timestamp": "time"})
+    if "volume" not in df.columns:
+        df["volume"] = 0
+    
+    # Ensure columns are in the correct order
+    df = df[["time", "open", "high", "low", "close", "volume"]]
+
+    df["time"] = pd.to_datetime(df["time"])
 
     # Orden y TZ
     df = df.sort_values("time")
@@ -192,7 +113,7 @@ def download(
         freq = aggregate_to if aggregate_to else granularity
         out_dir_parquet = Path("data/dukascopy")
         out_dir_parquet.mkdir(parents=True, exist_ok=True)
-        fname = f"{resolved_symbol}_{freq}_{start}_{end}.parquet"
+        fname = f"{resolved_symbol.upper()}_{freq}_{start}_{end}.parquet"
         out_parquet = str(out_dir_parquet / fname)
 
     Path(out_parquet).parent.mkdir(parents=True, exist_ok=True)
