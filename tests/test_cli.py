@@ -4,6 +4,8 @@ import subprocess
 import pandas as pd
 import pytest
 import os
+import numpy as np
+from core.labeling import validate_targets
 
 @pytest.fixture
 def sample_data(tmpdir):
@@ -22,14 +24,16 @@ def sample_data(tmpdir):
 
 def test_labeling_cli_script(sample_data, tmpdir):
     """Test the labeling_cli.py script."""
-    output_path = tmpdir.join("report.json")
+    report_output_path = tmpdir.join("report.json")
+    labeled_data_output_path = tmpdir.join("labeled_data.parquet")
     
     # Command to execute the script
     command = [
         r".venv\Scripts\python.exe",
         "scripts/labeling_cli.py",
         "--input-path", sample_data,
-        "--output-path", str(output_path),
+        "--output-path", str(labeled_data_output_path),
+        "--report-output-path", str(report_output_path),
         "--horizon", "10",
         "--atr-period", "14"
     ]
@@ -43,10 +47,11 @@ def test_labeling_cli_script(sample_data, tmpdir):
     
     # Assert the script ran successfully
     assert result.returncode == 0, f"Script failed with error: {result.stderr}"
-    assert output_path.exists(), "Output JSON report was not created."
+    assert report_output_path.exists(), "Output JSON report was not created."
+    assert labeled_data_output_path.exists(), "Labeled data parquet was not created."
     
     # Load the generated report and verify its contents
-    with open(str(output_path), 'r') as f:
+    with open(str(report_output_path), 'r', encoding='utf-8') as f:
         report = json.load(f)
         
     assert report['total_rows'] == 100
@@ -56,3 +61,48 @@ def test_labeling_cli_script(sample_data, tmpdir):
     assert 'down_atr_stats' in report
     assert 'mean' in report['up_atr_stats']
     assert 'mean' in report['down_atr_stats']
+    assert 'up_atr_share_gt_1' in report
+    assert 'up_atr_share_gt_2' in report
+    assert 'down_atr_share_gt_1' in report
+    assert 'down_atr_share_gt_2' in report
+    assert 'input_path' in report
+    assert 'labeled_output_path' in report
+    assert 'report_output_path' in report
+    assert 'timestamp' in report
+    assert 'python_version' in report
+
+def test_validate_targets():
+    horizon = 5
+    df = pd.DataFrame({
+        'up_atr': [1, 2, 3, 4, 5, np.nan, np.nan, np.nan, np.nan, np.nan],
+        'down_atr': [1, 2, 3, 4, 5, np.nan, np.nan, np.nan, np.nan, np.nan]
+    })
+
+    # Test case where NaNs match horizon
+    validate_targets(df, horizon)
+
+    # Test case where NaNs do not match horizon
+    df_invalid = pd.DataFrame({
+        'up_atr': [1, 2, 3, 4, 5, np.nan, np.nan, np.nan],
+        'down_atr': [1, 2, 3, 4, 5, np.nan, np.nan, np.nan]
+    })
+    with pytest.raises(ValueError):
+        validate_targets(df_invalid, horizon)
+
+def test_validate_targets():
+    horizon = 5
+    df = pd.DataFrame({
+        'up_atr': [1, 2, 3, 4, 5, np.nan, np.nan, np.nan, np.nan, np.nan],
+        'down_atr': [1, 2, 3, 4, 5, np.nan, np.nan, np.nan, np.nan, np.nan]
+    })
+
+    # Test case where NaNs match horizon
+    validate_targets(df, horizon)
+
+    # Test case where NaNs do not match horizon
+    df_invalid = pd.DataFrame({
+        'up_atr': [1, 2, 3, 4, 5, np.nan, np.nan, np.nan],
+        'down_atr': [1, 2, 3, 4, 5, np.nan, np.nan, np.nan]
+    })
+    with pytest.raises(ValueError):
+        validate_targets(df_invalid, horizon)

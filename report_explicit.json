@@ -1,0 +1,34 @@
+{
+    "total_rows": 5740,
+    "horizon": 10,
+    "missing_values": 10,
+    "up_atr_stats": {
+        "count": 5730.0,
+        "mean": 1.7792900214150846,
+        "std": 1.6719188170888901,
+        "min": -0.5838348498831988,
+        "25%": 0.5953586990493199,
+        "50%": 1.3849337135940207,
+        "75%": 2.438907264391492,
+        "max": 14.938511999267835
+    },
+    "down_atr_stats": {
+        "count": 5730.0,
+        "mean": 1.9138715349819757,
+        "std": 1.9219510667372597,
+        "min": -0.8238862480418307,
+        "25%": 0.6192717204157909,
+        "50%": 1.4436359364701041,
+        "75%": 2.6840313888574903,
+        "max": 24.597597998591624
+    },
+    "up_atr_share_gt_1": 0.6146596858638743,
+    "up_atr_share_gt_2": 0.3382198952879581,
+    "down_atr_share_gt_1": 0.6282722513089005,
+    "down_atr_share_gt_2": 0.36736474694589877,
+    "input_path": "data\\dukascopy\\EURUSD_m1_2024-01-01_2024-01-07.parquet",
+    "labeled_output_path": "labeled_data_explicit.parquet",
+    "report_output_path": "report_explicit.json",
+    "timestamp": "2025-09-10T03:41:53.442196Z",
+    "python_version": "3.8.10 (tags/v3.8.10:3d8993a, May  3 2021, 11:48:03) [MSC v.1928 64 bit (AMD64)]"
+}

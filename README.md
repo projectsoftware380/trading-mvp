@@ -54,3 +54,7 @@ Donde:
 - `min_fwd`: Es el precio mínimo de la columna 'low' en los próximos `horizon` períodos.
 - `close`: Es el precio de cierre del período actual.
 - `atr`: Es el Average True Range (ATR) del período actual.
+
+### Validación de Targets
+
+La función `validate_targets` en `core/labeling.py` verifica que el número de valores `NaN` (Not a Number) al final de las columnas de etiquetado (`up_atr` y `down_atr`) sea aproximadamente igual al `horizon` especificado. Esto asegura que el proceso de etiquetado ha generado correctamente los valores `NaN` esperados al final de la serie de tiempo, lo cual es crucial para evitar la fuga de información (look-ahead bias) en modelos de machine learning.
