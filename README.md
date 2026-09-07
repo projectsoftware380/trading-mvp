@@ -1,60 +1,143 @@
-# MVP Step1 Starter Kit
+# Trading MVP — Pipeline de datos para series temporales financieras
 
-## Carpetas
-- **core/** → funciones base (indicadores, etiquetado, carga de datos)
-- **data/** → aquí colocas tus archivos `.parquet`
-- **notebooks/** → notebooks de validación
-- **evaluation/** → scripts de backtest
-- **service/** → API FastAPI (más adelante)
-- **models/** → modelos guardados
+Proyecto experimental en Python para **adquirir, transformar, validar y etiquetar series temporales financieras** antes de su uso en modelos de Machine Learning.
 
-## Archivos
-- `config.yaml` → parámetros del MVP
-- `MVP_SCOPE.md` → documento del alcance
-- `requirements.txt` → dependencias
+El foco del repositorio está en la preparación correcta de datos: construcción de indicadores, generación de variables objetivo basadas en volatilidad, validación temporal y reproducibilidad del pipeline.
 
-## Descarga de datos (Dukascopy)
+> Este repositorio es una demostración técnica de ingeniería de datos y analítica. No constituye una estrategia de inversión lista para producción ni una recomendación financiera.
 
-CLI:
+## Qué demuestra
+
+- Procesamiento de datos OHLCV con **Pandas y NumPy**.
+- Descarga y normalización de datos históricos desde Dukascopy.
+- Ingeniería de características con indicadores técnicos.
+- Construcción de targets normalizados por **ATR**.
+- Validaciones orientadas a evitar **look-ahead bias**.
+- Exportación a **Parquet** y generación de reportes JSON.
+- CLI reproducible para ejecutar el pipeline.
+- Pruebas automatizadas con **pytest**.
+
+## Arquitectura
+
+```mermaid
+flowchart LR
+    A[Dukascopy / OHLCV] --> B[Descarga y normalización]
+    B --> C[Parquet]
+    C --> D[Pandas / NumPy]
+    D --> E[Indicadores técnicos]
+    E --> F[Feature engineering]
+    F --> G[Targets up_atr / down_atr]
+    G --> H[Validación temporal]
+    H --> I[Dataset etiquetado]
+    I --> J[Reporte estadístico]
+```
+
+## Componentes principales
+
+| Componente | Función |
+|---|---|
+| `core/data_loader.py` | Carga y validación inicial de datos. |
+| `core/indicators.py` | Construcción de indicadores técnicos. |
+| `core/atr_wr.py` | Cálculos asociados a volatilidad/ATR. |
+| `core/labeling.py` | Generación y validación de targets. |
+| `core/build_dataset.py` | Ensamblaje del dataset procesado. |
+| `scripts/labeling_cli.py` | Ejecución reproducible del etiquetado y reporte. |
+| `tools/dk_downloader/` | Utilidades para adquisición de datos desde Dukascopy. |
+| `tests/` | Pruebas del pipeline y de la CLI. |
+
+## Targets
+
+Las variables objetivo se expresan en múltiplos del ATR actual:
+
+```text
+up_atr   = (max_fwd - close) / atr
+down_atr = (close - min_fwd) / atr
+```
+
+Donde `max_fwd` y `min_fwd` representan el máximo y mínimo observados dentro de un horizonte futuro definido.
+
+Los últimos registros del dataset no disponen de horizonte futuro completo. Por diseño, esos targets permanecen como `NaN` y la función `validate_targets` comprueba que la cola de valores faltantes sea consistente con el horizonte especificado. Esta validación ayuda a detectar errores de etiquetado que podrían introducir fuga de información temporal.
+
+## Ejemplo de ejecución
+
+Instalación:
 
 ```bash
-python -m tools.dk_downloader.cli --symbol EURUSD --start 2024-01-01 --end 2024-01-15 --granularity m1
-python -m tools.dk_downloader.cli --symbol EURUSD --start 2024-01-01 --end 2024-01-01 --granularity tick --aggregate-to 1min
+python -m venv .venv
 ```
 
-Python:
+Windows PowerShell:
 
-```python
-from tools.dk_downloader.download import download
-p = download("EURUSD", "2024-01-01", "2024-01-07", "m1")
-print(p)
+```powershell
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
 ```
 
-## Generación de Reporte de Etiquetado
-
-Para generar un reporte con estadísticas sobre los labels de un dataset, puedes usar el script `scripts/labeling_cli.py`.
-
-Uso:
+Linux/macOS:
 
 ```bash
-python scripts/labeling_cli.py --input-path data/raw/EURUSD/2024_01_01-2024_01_07_m1.parquet --output-path report.json --horizon 10
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-Esto generará un archivo `report.json` con las estadísticas de las columnas `up_atr` y `down_atr`.
+Ejemplo de descarga:
 
-### Fórmulas de Etiquetado (up_atr y down_atr)
+```bash
+python -m tools.dk_downloader.cli \
+  --symbol EURUSD \
+  --start 2024-01-01 \
+  --end 2024-01-15 \
+  --granularity m1
+```
 
-Las etiquetas `up_atr` y `down_atr` se calculan utilizando las siguientes fórmulas:
+Ejemplo de etiquetado:
 
-- `up_atr = (max_fwd - close) / atr`
-- `down_atr = (close - min_fwd) / atr`
+```bash
+python scripts/labeling_cli.py \
+  --input-path data/raw/EURUSD/sample.parquet \
+  --output-path data/processed/labeled.parquet \
+  --report-output-path report.json \
+  --horizon 10 \
+  --atr-period 14
+```
 
-Donde:
-- `max_fwd`: Es el precio máximo de la columna 'high' en los próximos `horizon` períodos.
-- `min_fwd`: Es el precio mínimo de la columna 'low' en los próximos `horizon` períodos.
-- `close`: Es el precio de cierre del período actual.
-- `atr`: Es el Average True Range (ATR) del período actual.
+## Pruebas
 
-### Validación de Targets
+```bash
+pytest
+```
 
-La función `validate_targets` en `core/labeling.py` verifica que el número de valores `NaN` (Not a Number) al final de las columnas de etiquetado (`up_atr` y `down_atr`) sea aproximadamente igual al `horizon` especificado. Esto asegura que el proceso de etiquetado ha generado correctamente los valores `NaN` esperados al final de la serie de tiempo, lo cual es crucial para evitar la fuga de información (look-ahead bias) en modelos de machine learning.
+Las pruebas usan datos temporales generados durante la ejecución y no dependen de rutas absolutas de un entorno virtual local.
+
+## Resultado de ejemplo
+
+El repositorio conserva `report_explicit.json` como evidencia de una ejecución del pipeline. Ese archivo contiene estadísticas descriptivas del dataset etiquetado. Las proporciones de `up_atr` y `down_atr` son **distribuciones de targets**, no métricas de accuracy de un modelo predictivo.
+
+## Alcance actual
+
+Implementado:
+
+- adquisición de datos;
+- transformación y validación;
+- indicadores y feature engineering;
+- etiquetado temporal;
+- reportes;
+- pruebas automatizadas.
+
+Fuera del alcance actual del repositorio público:
+
+- entrenamiento de modelos predictivos completos;
+- API de serving;
+- ejecución automática de operaciones.
+
+Esas capacidades pertenecen a otras etapas/proyectos y no se presentan aquí como funcionalidades terminadas.
+
+## Autor
+
+**Manuel Alfonso Rincón Méndez**  
+Tecnólogo en Análisis y Desarrollo de Sistemas de Información · Estudiante de Ingeniería de Sistemas  
+Intereses: Python, ingeniería de datos, Machine Learning, automatización e IA aplicada.
+
+## Licencia
+
+MIT. Ver `LICENSE`.
